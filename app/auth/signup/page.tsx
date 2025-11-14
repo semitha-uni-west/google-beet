@@ -34,8 +34,8 @@ export default function SignupPage() {
       if (data.user) {
         router.push('/dashboard')
       }
-    } catch (error: any) {
-      setError(error.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setLoading(false)
     }
