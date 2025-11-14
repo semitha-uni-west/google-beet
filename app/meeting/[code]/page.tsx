@@ -1,22 +1,24 @@
 'use client'
 
-import { useState, useEffect, useRef, use } from 'react'
+import { useState, useEffect, useRef, use, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import SimplePeer from 'simple-peer'
 
-interface Participant {
+interface User {
   id: string
-  email: string
-  stream?: MediaStream
-  peer?: SimplePeer.Instance
+  email?: string
+}
+
+interface Meeting {
+  id: string
+  meeting_code: string
+  title?: string
 }
 
 export default function MeetingRoomPage({ params }: { params: Promise<{ code: string }> }) {
   const resolvedParams = use(params)
-  const [user, setUser] = useState<any>(null)
-  const [meeting, setMeeting] = useState<any>(null)
-  const [participants, setParticipants] = useState<Participant[]>([])
+  const [user, setUser] = useState<User | null>(null)
+  const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [isVideoOn, setIsVideoOn] = useState(true)
   const [isAudioOn, setIsAudioOn] = useState(true)
@@ -26,27 +28,33 @@ export default function MeetingRoomPage({ params }: { params: Promise<{ code: st
   
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
-  const peersRef = useRef<{ [key: string]: SimplePeer.Instance }>({})
   const router = useRouter()
 
-  useEffect(() => {
-    initializeMeeting()
-    return () => {
-      cleanup()
-    }
-  }, [])
-
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
     if (localStream) {
       localStream.getTracks().forEach(track => track.stop())
     }
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach(track => track.stop())
     }
-    Object.values(peersRef.current).forEach(peer => peer.destroy())
-  }
+  }, [localStream])
 
-  const initializeMeeting = async () => {
+  const getUserMedia = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      })
+      setLocalStream(stream)
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream
+      }
+    } catch {
+      setError('Failed to access camera/microphone')
+    }
+  }, [])
+
+  const initializeMeeting = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
@@ -78,27 +86,18 @@ export default function MeetingRoomPage({ params }: { params: Promise<{ code: st
 
       await getUserMedia()
       setLoading(false)
-    } catch (error: any) {
-      setError(error.message || 'Failed to join meeting')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to join meeting')
       setLoading(false)
     }
-  }
+  }, [resolvedParams.code, router, getUserMedia])
 
-  const getUserMedia = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      })
-      setLocalStream(stream)
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream
-      }
-    } catch (error) {
-      console.error('Error accessing media devices:', error)
-      setError('Failed to access camera/microphone')
+  useEffect(() => {
+    initializeMeeting()
+    return () => {
+      cleanup()
     }
-  }
+  }, [initializeMeeting, cleanup])
 
   const toggleVideo = () => {
     if (localStream) {
@@ -139,8 +138,7 @@ export default function MeetingRoomPage({ params }: { params: Promise<{ code: st
         }
 
         setIsScreenSharing(true)
-      } catch (error) {
-        console.error('Error sharing screen:', error)
+      } catch {
         setError('Failed to share screen')
       }
     } else {
@@ -172,8 +170,7 @@ export default function MeetingRoomPage({ params }: { params: Promise<{ code: st
       }
       cleanup()
       router.push('/dashboard')
-    } catch (error) {
-      console.error('Error leaving meeting:', error)
+    } catch {
       router.push('/dashboard')
     }
   }
@@ -241,20 +238,6 @@ export default function MeetingRoomPage({ params }: { params: Promise<{ code: st
               </div>
             )}
           </div>
-
-          {/* Remote Participants */}
-          {participants.map((participant) => (
-            <div key={participant.id} className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
-                <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-                  {participant.email?.charAt(0).toUpperCase()}
-                </div>
-              </div>
-              <div className="absolute bottom-4 left-4 text-white bg-black bg-opacity-50 px-3 py-1 rounded">
-                {participant.email}
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 

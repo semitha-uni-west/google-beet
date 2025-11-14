@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { v4 as uuidv4 } from 'uuid'
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [meetingCode, setMeetingCode] = useState('')
   const [customCode, setCustomCode] = useState('')
@@ -15,11 +14,7 @@ export default function DashboardPage() {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const router = useRouter()
 
-  useEffect(() => {
-    checkUser()
-  }, [])
-
-  const checkUser = async () => {
+  const checkUser = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
@@ -27,12 +22,16 @@ export default function DashboardPage() {
       } else {
         setUser(user)
       }
-    } catch (error) {
+    } catch {
       router.push('/auth/login')
     } finally {
       setLoading(false)
     }
-  }
+  }, [router])
+
+  useEffect(() => {
+    checkUser()
+  }, [checkUser])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -53,7 +52,7 @@ export default function DashboardPage() {
     try {
       const code = customCode || Math.random().toString(36).substring(2, 10).toUpperCase()
       
-      const { data, error } = await supabase
+      const { error: insertError } = await supabase
         .from('meetings')
         .insert({
           meeting_code: code,
@@ -63,11 +62,11 @@ export default function DashboardPage() {
         .select()
         .single()
 
-      if (error) throw error
+      if (insertError) throw insertError
 
       router.push(`/meeting/${code}`)
-    } catch (error: any) {
-      setError(error.message || 'Failed to create meeting')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create meeting')
     }
   }
 
@@ -93,7 +92,7 @@ export default function DashboardPage() {
       if (data) {
         router.push(`/meeting/${meetingCode.toUpperCase()}`)
       }
-    } catch (error: any) {
+    } catch {
       setError('Meeting not found or is no longer active')
     }
   }
